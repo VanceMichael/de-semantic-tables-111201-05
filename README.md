@@ -23,7 +23,23 @@ python3 -m collector show --db var/records.sqlite3
 python3 -m collector serve --db var/records.sqlite3 --port 8080
 ```
 
+公示网页（HTML 附件）走语义层：先重建逻辑网格、识别语义列，再决定是否落正式目录。
+
+```bash
+python3 -m collector import --input fixtures/equipment.html --columns fixtures/columns.json --db var/records.sqlite3
+python3 -m collector explain --input fixtures/equipment.html --columns fixtures/columns.json
+python3 -m collector catalog --db var/records.sqlite3
+python3 -m collector quarantine --db var/records.sqlite3
+python3 -m collector replay --db var/records.sqlite3 --columns fixtures/columns.json
+```
+
+`import` 成功发布返回 0；页面被隔离时原文已留存并记录原因，命令返回 1。
+`explain` 只解释不写库，供业务人员核对组合表头、重复表头与单位换算的解释结果。
+`replay` 用当前规则重放仍处于隔离状态的页面；同一页面在同一规则版本下只产生一个批次。
+
 查询服务监听回环地址，`GET /records` 返回数据库中的记录；按 Ctrl-C 停止。
+业务核对入口：`GET /catalog` 正式目录当前视图，`GET /pages` 全部页面与批次状态，
+`GET /quarantine` 仍隔离的页面及原因，`GET /page/<digest>` 单页全部批次的映射与原因。
 
 ## 组件与数据
 
@@ -34,6 +50,15 @@ python3 -m collector serve --db var/records.sqlite3 --port 8080
 `api.py` 提供只读查询入口。`fixtures/sample.json` 是当前导入器支持的输入。
 其他附件描述同领域的合成页面、协议或事件，可以由调用方构造本地来源。
 当前响应服务是顺序脚本工具，不自动推断认证、文件或表单业务；领域对象提供对应的本地交互。
+
+语义层由 `collector/grid.py` 与 `collector/semantics.py` 组成，处理 `fixtures/equipment.html`
+这类公示网页：先把 rowspan/colspan 展开为可追溯到原单元格的逻辑网格（隐藏列、`<sup>` 脚注、
+重叠合并都在这一层识别），再按 `fixtures/columns.json` 的必需列与单位白名单做语义映射。
+数量与金额使用不同的单位、千位分隔与脚注规则；金额按表头单位统一换算为元并保留原值。
+跨行取值只来自真实的合并覆盖，业务主键为机构+编号，绝不对全表空白向下填充。
+不认识的必需列、单位冲突、重叠合并单元格等情况整页隔离：原页留存、原因入库、不挪列猜测。
+已发布记录按（主键, 规则版本）保留原始坐标引用；规则升级后重放隔离页面生成新批次，
+并发重放由事务与唯一约束保证不产生重复正式批次。
 
 ## 可复现运行
 
